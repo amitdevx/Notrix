@@ -1,0 +1,27 @@
+{
+  "name": "@notrix/editor",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.6.0",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.27.0"
+  },
+  "devDependencies": {
+    "@notrix/typescript-config": "workspace:*",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19",
+    "jsdom": "^29.1.1",
+    "react": "19.2.4",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}
