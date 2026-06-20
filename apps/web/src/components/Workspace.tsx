@@ -1,5 +1,7 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FileText, Plus, Hash, LogOut, RefreshCw, UploadCloud, Search, ChevronRight, Settings, Command, Network } from 'lucide-react';
 import { OPFSClient, FileMetadata, Indexer, DBClient } from '@notrix/core-engine';
 import { Editor } from '@notrix/editor';
 import { BaseView } from './BaseView';
@@ -7,6 +9,7 @@ import { useAuth } from './Auth';
 import dynamic from 'next/dynamic';
 import { SyncClient, generateKey, exportKey, importKey, PluginSandbox } from '@notrix/core-engine';
 import { Marketplace } from './Marketplace';
+import { useWorkspaceStore } from '../store/workspaceStore';
 
 const GraphView = dynamic(() => import('./GraphView').then(mod => mod.GraphView), { ssr: false });
 const CanvasView = dynamic(() => import('./CanvasView').then(mod => mod.CanvasView), { ssr: false });
@@ -37,9 +40,7 @@ if (typeof window !== 'undefined') {
 export function Workspace() {
   const [files, setFiles] = useState<FileMetadata[]>([]);
   const [tags, setTags] = useState<string[]>([]);
-  const [tabs, setTabs] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<string | null>(null);
-  const [contentCache, setContentCache] = useState<Record<string, string>>({});
+  const { tabs, activeTab, contentCache, setTabs, setActiveTab, setContent, openTab, closeTab } = useWorkspaceStore();
   const [error, setError] = useState<string | null>(opfsError);
   const [mode, setMode] = useState<'live' | 'source'>('live');
   const [graphUpdated, setGraphUpdated] = useState(0);
@@ -58,6 +59,42 @@ export function Workspace() {
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [newFileName, setNewFileName] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showPalette, setShowPalette] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  const [publishStatus, setPublishStatus] = useState<string>('');
+  const [zenMode, setZenMode] = useState(false);
+
+  // Workspace Persistence
+  useEffect(() => {
+    const saved = localStorage.getItem('notrix-workspace');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.tabs) setTabs(parsed.tabs);
+        if (parsed.activeTab) setActiveTab(parsed.activeTab);
+      } catch (e) {}
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tabs.length > 0) {
+      localStorage.setItem('notrix-workspace', JSON.stringify({ tabs, activeTab }));
+    }
+  }, [tabs, activeTab]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        e.preventDefault();
+        setShowPalette(true);
+      }
+      if (e.key === 'Escape') {
+        setZenMode(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handlePublish = async () => {
     if (!activeTab || !contentCache[activeTab]) return;
@@ -185,31 +222,24 @@ export function Workspace() {
 
   const openFile = async (name: string) => {
     if (!globalOpfs) return;
-    if (!tabs.includes(name)) {
-      setTabs([...tabs, name]);
-    }
-    setActiveTab(name);
-    
     if (!(name in contentCache)) {
       const data = await globalOpfs.readFile(`/${name}`);
-      setContentCache(prev => ({ ...prev, [name]: data }));
+      openTab(name, data);
+    } else {
+      openTab(name);
     }
   };
 
-  const closeTab = (e: React.MouseEvent, name: string) => {
+  const handleCloseTab = (e: React.MouseEvent, name: string) => {
     e.stopPropagation();
-    const newTabs = tabs.filter(t => t !== name);
-    setTabs(newTabs);
-    if (activeTab === name) {
-      setActiveTab(newTabs.length > 0 ? newTabs[newTabs.length - 1] : null);
-    }
+    closeTab(name);
   };
 
   const handleEditorChange = useCallback((newContent: string) => {
     if (!activeTab || !globalOpfs) return;
     
     // Update local state immediately
-    setContentCache(prev => ({ ...prev, [activeTab]: newContent }));
+    setContent(activeTab, newContent);
     
     // Debounce the actual OPFS write per tab
     if (saveTimersRef.current[activeTab]) {
@@ -257,22 +287,106 @@ export function Workspace() {
   };
 
   return (
-    <div className="flex h-screen bg-neutral-900 text-neutral-100 font-sans relative">
+    <div className="flex h-screen bg-workspace-bg text-neutral-100 font-sans relative overflow-hidden selection:bg-brand-primary/30">
       {toastMessage && (
         <div className="absolute bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded shadow-lg z-50">
           {toastMessage}
         </div>
       )}
-      <div className="w-64 border-r border-neutral-800 flex flex-col bg-neutral-900 shrink-0">
-        <div className="p-4 border-b border-neutral-800 flex justify-between items-center">
-          <span className="font-bold text-sm text-neutral-300 uppercase tracking-wider">Notrix</span>
+      
+      <AnimatePresence>
+      {showPalette && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="absolute inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center pt-[15vh] px-4" 
+          onClick={() => setShowPalette(false)}
+        >
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: -20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -20 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="bg-workspace-elevated border border-workspace-border rounded-xl w-full max-w-xl shadow-floating overflow-hidden" 
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center border-b border-workspace-border px-4 py-3">
+              <Search size={16} className="text-neutral-500 mr-3" />
+              <input 
+                autoFocus
+                className="w-full bg-transparent text-neutral-200 outline-none text-[15px] placeholder-neutral-500" 
+                placeholder="Type a command..." 
+                value={paletteQuery}
+                onChange={e => setPaletteQuery(e.target.value)}
+              />
+              <kbd className="hidden sm:inline-flex items-center gap-1 bg-workspace-panel border border-workspace-border rounded px-2 py-0.5 text-[10px] font-mono text-neutral-400">ESC</kbd>
+            </div>
+            <div className="p-2 max-h-[60vh] overflow-auto no-scrollbar">
+              <div className="px-3 py-2 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Suggested</div>
+              <motion.div whileHover={{ backgroundColor: 'var(--workspace-active)' }} className="px-3 py-2.5 text-sm text-neutral-300 cursor-pointer rounded-lg flex items-center transition-colors" onClick={() => { setShowGraph(true); setShowPalette(false); }}>
+                <Network size={14} className="mr-3 text-neutral-500" />
+                Show Global Graph
+              </motion.div>
+              <motion.div whileHover={{ backgroundColor: 'var(--workspace-active)' }} className="px-3 py-2.5 text-sm text-neutral-300 cursor-pointer rounded-lg flex items-center transition-colors" onClick={() => { setIsCreatingFile(true); setShowPalette(false); }}>
+                <Plus size={14} className="mr-3 text-neutral-500" />
+                Create New Note
+              </motion.div>
+              <motion.div whileHover={{ backgroundColor: 'var(--workspace-active)' }} className="px-3 py-2.5 text-sm text-neutral-300 cursor-pointer rounded-lg flex items-center transition-colors" onClick={() => { setShowMarketplace(true); setShowPalette(false); }}>
+                <Settings size={14} className="mr-3 text-neutral-500" />
+                Open Marketplace
+              </motion.div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+
+      {/* Floating Exit Zen Mode Button */}
+      <AnimatePresence>
+      {zenMode && (
+        <motion.button
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 0.3, y: 0 }}
+          whileHover={{ opacity: 1 }}
+          exit={{ opacity: 0, y: -20 }}
+          onClick={() => setZenMode(false)}
+          className="fixed top-6 right-6 z-50 bg-workspace-panel border border-workspace-border text-neutral-300 hover:text-white px-4 py-2 rounded-full text-xs font-medium shadow-floating transition-opacity flex items-center space-x-2"
+        >
+          <span>Exit Zen Mode</span>
+          <kbd className="font-mono bg-workspace-bg px-1.5 py-0.5 rounded text-[10px] text-neutral-500 border border-workspace-border">ESC</kbd>
+        </motion.button>
+      )}
+      </AnimatePresence>
+
+      {/* Premium Animated Sidebar */}
+      <AnimatePresence>
+      {!zenMode && (
+      <motion.div 
+        initial={{ x: -250, opacity: 0, width: 0 }}
+        animate={{ x: 0, opacity: 1, width: 256 }}
+        exit={{ x: -250, opacity: 0, width: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        className="border-r border-workspace-border flex-col bg-workspace-panel shadow-floating shrink-0 hidden md:flex z-10 overflow-hidden"
+      >
+        <div className="w-64 flex flex-col h-full">
+          <div className="p-4 border-b border-workspace-border flex justify-between items-center bg-workspace-elevated/50 backdrop-blur-md">
+          <div className="flex items-center space-x-2">
+            <div className="w-6 h-6 rounded bg-brand-primary/20 flex items-center justify-center border border-brand-primary/30">
+              <Command size={14} className="text-brand-primary" />
+            </div>
+            <span className="font-semibold text-sm text-neutral-200 tracking-wide">Notrix</span>
+          </div>
         </div>
         
-        <div className="p-3 border-b border-neutral-800">
-          <input 
-            type="text" 
-            placeholder="Search files..."
-            className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-1.5 text-sm text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-blue-500"
+        <div className="p-3 border-b border-workspace-border">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+            <input 
+              type="text" 
+              placeholder="Search files... (Ctrl+P)"
+              className="w-full bg-workspace-elevated border border-workspace-border rounded-md pl-9 pr-3 py-1.5 text-sm text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50 transition-all shadow-inner"
             onChange={async (e) => {
               const q = e.target.value;
               if (!q) {
@@ -288,23 +402,24 @@ export function Workspace() {
               }
             }}
           />
+          </div>
         </div>
         
-        <div className="px-4 pb-2 border-b border-neutral-800">
+        <div className="px-4 pb-2 border-b border-workspace-border">
           <button 
             onClick={() => setShowGraph(!showGraph)}
-            className={`w-full flex items-center justify-center p-2 rounded text-sm transition-colors ${showGraph ? 'bg-blue-600 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'}`}
+            className={`w-full flex items-center justify-center p-2 rounded-md text-xs font-medium transition-all ${showGraph ? 'bg-brand-primary text-white shadow-md shadow-brand-glow' : 'bg-workspace-elevated border border-workspace-border text-neutral-300 hover:bg-workspace-active hover:text-white'}`}
           >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+            <Network size={14} className="mr-2" />
             {showGraph ? 'Hide Global Graph' : 'Show Global Graph'}
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto no-scrollbar">
           <div className="p-2 space-y-1">
-            <div className="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2 mt-2 flex justify-between">
+            <div className="px-2 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 mt-2 flex justify-between items-center group">
               <span>Vault</span>
-              <button onClick={() => setIsCreatingFile(true)} className="hover:text-white">+</button>
+              <button onClick={() => setIsCreatingFile(true)} className="opacity-0 group-hover:opacity-100 hover:text-white transition-opacity"><Plus size={12} /></button>
             </div>
             {isCreatingFile && (
               <div className="p-2 flex items-center">
@@ -323,20 +438,26 @@ export function Workspace() {
                 />
               </div>
             )}
+            <AnimatePresence>
             {files.map(f => (
-              <div
+              <motion.div
+                layout
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.9 }}
                 key={f.name}
                 draggable
-                onDragStart={(e) => {
+                onDragStart={(e: any) => {
                   e.dataTransfer.setData('text/plain', f.name);
                 }}
-                className={`p-2 text-sm cursor-pointer rounded flex items-center transition-colors ${activeTab === f.name ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}`}
+                className={`p-1.5 text-[13px] cursor-pointer rounded-md flex items-center transition-all group ${activeTab === f.name ? 'bg-workspace-active text-white shadow-sm' : 'text-neutral-400 hover:bg-workspace-active/50 hover:text-neutral-200'}`}
                 onClick={() => openFile(f.name)}
               >
-                <svg className="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                <span className="truncate">{f.name}</span>
-              </div>
+                <FileText size={14} className={`mr-2 transition-colors ${activeTab === f.name ? 'text-brand-primary' : 'text-neutral-500 group-hover:text-neutral-400'}`} />
+                <span className="truncate font-medium">{f.name}</span>
+              </motion.div>
             ))}
+            </AnimatePresence>
             {files.length === 0 && (
               <div className="px-4 py-2 text-xs text-neutral-600 text-center">
                 No files found
@@ -344,8 +465,8 @@ export function Workspace() {
             )}
           </div>
           
-          <div className="mt-4 p-2 space-y-1 border-t border-neutral-800">
-            <div className="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2 mt-2">Tags</div>
+          <div className="mt-4 p-2 space-y-1 border-t border-workspace-border">
+            <div className="px-2 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 mt-2">Tags</div>
             {tags.length > 0 ? tags.map(tag => (
               <button 
                 key={tag}
@@ -358,17 +479,16 @@ export function Workspace() {
                     console.error('Failed to filter by tag', e);
                   }
                 }}
-                className="w-full text-left px-2 py-1.5 text-sm text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 rounded flex items-center transition-colors"
+                className="w-full text-left px-2 py-1.5 text-[13px] text-neutral-400 hover:bg-workspace-active hover:text-neutral-200 rounded-md flex items-center transition-colors font-medium"
               >
-                <span className="mr-2 opacity-50">#</span>
+                <Hash size={12} className="mr-2 opacity-50" />
                 {tag}
               </button>
             )) : (
-              <div className="px-4 py-2 text-neutral-500 italic text-sm">No tags yet.</div>
+              <div className="px-4 py-2 text-neutral-600 italic text-xs">No tags yet.</div>
             )}
           </div>
         </div>
-
         {/* Context Panels */}
         <div className="flex-1 overflow-auto border-t border-neutral-800 bg-neutral-900 flex flex-col" data-update={graphUpdated}>
           <div className="p-3 border-b border-neutral-800 bg-neutral-800/50">
@@ -450,50 +570,84 @@ export function Workspace() {
             </button>
           )}
         </div>
-      </div>
-      <div className="flex-1 flex flex-col bg-[#1e1e1e] min-w-0">
-        {tabs.length > 0 && (
-          <div className="flex border-b border-neutral-800 bg-neutral-900 overflow-x-auto no-scrollbar">
+        </div>
+      </motion.div>
+      )}
+      </AnimatePresence>
+      <div className="flex-1 flex flex-col bg-workspace-bg min-w-0">
+        <AnimatePresence>
+        {!zenMode && tabs.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, height: 0 }}
+            className="flex border-b border-workspace-border bg-workspace-panel overflow-x-auto no-scrollbar"
+          >
+            <AnimatePresence>
             {tabs.map(tab => (
-              <div 
+              <motion.div 
+                layout
+                initial={{ opacity: 0, scale: 0.9, x: -10 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.9, width: 0, padding: 0 }}
                 key={tab}
-                className={`flex items-center px-4 py-2 border-r border-neutral-800 cursor-pointer min-w-max text-sm transition-colors ${activeTab === tab ? 'bg-[#1e1e1e] text-white border-t-2 border-t-blue-500' : 'bg-neutral-900 text-neutral-400 hover:bg-neutral-800'}`}
+                className={`flex items-center px-4 py-2.5 border-r border-workspace-border cursor-pointer min-w-max text-sm transition-all origin-left ${activeTab === tab ? 'bg-workspace-bg text-brand-primary shadow-[inset_0_2px_0_0_var(--color-brand-primary)]' : 'bg-workspace-panel text-neutral-400 hover:bg-workspace-active hover:text-neutral-200'}`}
                 onClick={() => setActiveTab(tab)}
               >
-                <span>{tab}</span>
+                <span className="font-medium tracking-wide">{tab}</span>
                 <button 
-                  onClick={(e) => closeTab(e, tab)}
-                  className="ml-2 text-neutral-500 hover:text-white rounded-full p-0.5 hover:bg-neutral-700"
+                  onClick={(e) => handleCloseTab(e, tab)}
+                  className="ml-3 text-neutral-500 hover:text-red-400 rounded-full p-0.5 hover:bg-workspace-elevated transition-colors"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
-              </div>
+              </motion.div>
             ))}
-          </div>
+            </AnimatePresence>
+          </motion.div>
         )}
+        </AnimatePresence>
         
         {/* Editor Toolbar */}
-        {activeTab && (
-          <div className="flex justify-end p-2 border-b border-neutral-800 bg-[#1e1e1e]">
-            <div className="bg-neutral-800 rounded p-1 flex">
+        <AnimatePresence>
+        {!zenMode && activeTab && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0, height: 0 }}
+            className="flex justify-between items-center px-6 py-2 border-b border-workspace-border bg-workspace-bg"
+          >
+            <div className="text-xs text-neutral-500 flex items-center space-x-2">
+              <span className="font-mono bg-workspace-active px-2 py-0.5 rounded text-neutral-400">{activeTab}</span>
+            </div>
+            <div className="bg-workspace-panel border border-workspace-border rounded-lg p-1 flex shadow-sm">
+              <button 
+                onClick={() => setZenMode(true)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors text-neutral-400 hover:text-neutral-200 hover:bg-workspace-active mr-1 border border-transparent flex items-center`}
+              >
+                <svg className="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                Zen
+              </button>
+              <div className="w-px h-4 bg-workspace-border mx-1 self-center"></div>
               <button 
                 onClick={() => setMode('live')}
-                className={`px-3 py-1 text-xs rounded transition-colors ${mode === 'live' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-white'}`}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${mode === 'live' ? 'bg-workspace-elevated text-brand-primary shadow-sm border border-workspace-border' : 'text-neutral-400 hover:text-neutral-200 hover:bg-workspace-active border border-transparent'}`}
               >
-                Live Preview
+                Preview
               </button>
               <button 
                 onClick={() => setMode('source')}
-                className={`px-3 py-1 text-xs rounded transition-colors ${mode === 'source' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-white'}`}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${mode === 'source' ? 'bg-workspace-elevated text-brand-primary shadow-sm border border-workspace-border' : 'text-neutral-400 hover:text-neutral-200 hover:bg-workspace-active border border-transparent'}`}
               >
                 Source
               </button>
             </div>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         {showGraph ? (
-          <main className="flex-1 bg-[#1e1e1e] relative">
+          <main className="flex-1 bg-workspace-bg relative">
             <GraphView data={graphData} onNodeClick={(nodeId) => {
               const name = nodeId.replace(/^\//, '');
               setShowGraph(false);
@@ -501,7 +655,7 @@ export function Workspace() {
             }} />
           </main>
         ) : activeTab && (activeTab in contentCache) ? (
-          <main className="flex-1 bg-white dark:bg-[#1e1e1e] relative">
+          <main className="flex-1 bg-workspace-bg relative">
             {activeTab.endsWith('.base') ? (
               <BaseView path={activeTab} opfs={globalOpfs!} />
             ) : activeTab.endsWith('.canvas') ? (

@@ -11,18 +11,25 @@
   "dependencies": {
     "@notrix/core-engine": "workspace:^",
     "@notrix/editor": "workspace:^",
+    "@radix-ui/react-dialog": "^1.1.17",
+    "@radix-ui/react-scroll-area": "^1.2.12",
     "@supabase/supabase-js": "^2.108.2",
     "@tanstack/react-table": "^8.21.3",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.40.0",
     "graphology": "^0.26.0",
     "graphology-layout-forceatlas2": "^0.10.1",
     "js-yaml": "^4.2.0",
+    "lucide-react": "^1.21.0",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "reactflow": "^11.11.4",
     "sigma": "^3.0.3",
+    "tailwind-merge": "^3.6.0",
     "y-websocket": "^3.0.0",
-    "yjs": "^13.6.31"
+    "yjs": "^13.6.31",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

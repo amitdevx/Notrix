@@ -14,7 +14,7 @@ console.log(`Sync Relay Server is running on port ${port}`);
 const server = serve({
   fetch: app.fetch,
   port
-});
+}) as any;
 
 const wss = new WebSocketServer({ server });
 
@@ -37,11 +37,11 @@ wss.on('connection', (ws: WebSocket, req) => {
 
   ws.on('message', (message, isBinary) => {
     // Broadcast to all other clients in the room
-    for (const client of room) {
+    room.forEach(client => {
       if (client !== ws && client.readyState === WebSocket.OPEN) {
         client.send(message, { binary: isBinary });
       }
-    }
+    });
   });
 
   ws.on('close', () => {

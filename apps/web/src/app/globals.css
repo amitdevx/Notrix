@@ -3,24 +3,67 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-}
+  
+  /* Workspace Light (fallback) */
+  --workspace-bg: #f9f9fb;
+  --workspace-panel: #ffffff;
+  --workspace-border: #e5e7eb;
+  --workspace-elevated: #ffffff;
+  --workspace-active: #f3f4f6;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --brand-primary: #5E6AD2;
+  --brand-glow: rgba(94, 106, 210, 0.15);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    
+    /* Workspace Dark (Premium Arc/Linear feel) */
+    --workspace-bg: #0F0F11;
+    --workspace-panel: #161618;
+    --workspace-border: #27272A;
+    --workspace-elevated: #1C1C1F;
+    --workspace-active: #2D2D30;
   }
 }
 
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  
+  /* Custom Colors */
+  --color-workspace-bg: var(--workspace-bg);
+  --color-workspace-panel: var(--workspace-panel);
+  --color-workspace-border: var(--workspace-border);
+  --color-workspace-elevated: var(--workspace-elevated);
+  --color-workspace-active: var(--workspace-active);
+  
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-glow: var(--brand-glow);
+
+  --font-sans: var(--font-geist-sans), Inter, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+
+  /* Custom Shadows */
+  --shadow-glass: 0 4px 30px rgba(0, 0, 0, 0.1);
+  --shadow-floating: 0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.4);
+}
+
 body {
-  background: var(--background);
+  background: var(--workspace-bg);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Hide scrollbars for cleaner aesthetic */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }

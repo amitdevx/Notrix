@@ -51,18 +51,37 @@ export const Editor: React.FC<EditorProps> = ({
       }
     });
 
+    const baseTheme = EditorView.theme({
+      '&': { backgroundColor: 'transparent', height: '100%' },
+      '&.cm-focused': { outline: 'none' },
+      '.cm-scroller': { fontFamily: 'var(--font-sans)' },
+      '.cm-content': { caretColor: 'var(--color-brand-primary)' },
+      '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--color-brand-primary)', borderLeftWidth: '2px' },
+      '.cm-selectionBackground, .cm-content ::selection': { backgroundColor: 'var(--color-brand-glow) !important' },
+    });
+
     const livePreviewTheme = EditorView.theme({
-      '&': { fontSize: '16px', fontFamily: 'Inter, sans-serif' },
-      '.cm-content': { maxWidth: '800px', margin: '0 auto', padding: '40px' },
-      '.cm-header': { fontWeight: 'bold' },
-      '.cm-header-1': { fontSize: '2.5em', marginTop: '24px' },
-      '.cm-header-2': { fontSize: '2em', marginTop: '20px' },
-      '.cm-header-3': { fontSize: '1.5em', marginTop: '16px' }
+      '&': { fontSize: '16px', color: 'var(--color-foreground)' },
+      '.cm-content': { 
+        maxWidth: '750px', 
+        margin: '0 auto', 
+        padding: '60px 40px 50vh 40px', // Extra bottom padding for typewriter feel
+        lineHeight: '1.7' 
+      },
+      '.cm-header': { fontWeight: '700', color: 'var(--color-foreground)' },
+      '.cm-header-1': { fontSize: '2.25em', marginTop: '1.5em', marginBottom: '0.5em', letterSpacing: '-0.02em' },
+      '.cm-header-2': { fontSize: '1.75em', marginTop: '1.2em', marginBottom: '0.4em', letterSpacing: '-0.01em' },
+      '.cm-header-3': { fontSize: '1.375em', marginTop: '1em', marginBottom: '0.3em' },
+      '.cm-wikilink': { color: 'var(--color-brand-primary)', textDecoration: 'none', cursor: 'pointer', opacity: 0.9 },
+      '.cm-wikilink:hover': { opacity: 1, textDecoration: 'underline' }
     });
 
     const sourceTheme = EditorView.theme({
-      '&': { fontSize: '14px', fontFamily: 'monospace' },
-      '.cm-content': { padding: '20px' }
+      '&': { fontSize: '14px', fontFamily: 'var(--font-mono)', color: '#A1A1AA' },
+      '.cm-content': { padding: '40px', maxWidth: '800px', margin: '0 auto', paddingBottom: '50vh' },
+      '.cm-gutters': { backgroundColor: 'transparent', border: 'none', color: '#52525B' },
+      '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--color-brand-primary)' },
+      '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.02)' }
     });
 
     const modeCompartment = new Compartment();
@@ -76,6 +95,7 @@ export const Editor: React.FC<EditorProps> = ({
     const state = EditorState.create({
       doc: initialContent,
       extensions: [
+        baseTheme,
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         markdown({ base: markdownLanguage }),

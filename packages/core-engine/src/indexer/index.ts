@@ -147,4 +147,56 @@ export class Indexer {
     }
     return { nodes, edges };
   }
+
+  getLocalGraphData(centerPath: string, depth: number = 1): { nodes: { id: string; label: string; size: number }[]; edges: { source: string; target: string }[] } {
+    const visitedNodes = new Set<string>();
+    const edgesToReturn: { source: string; target: string }[] = [];
+    
+    const queue: { path: string; currentDepth: number }[] = [{ path: centerPath, currentDepth: 0 }];
+    visitedNodes.add(centerPath);
+
+    while (queue.length > 0) {
+      const { path, currentDepth } = queue.shift()!;
+      if (currentDepth >= depth) continue;
+
+      const node = this.graph.nodes.get(path);
+      if (node) {
+        // Outgoing links
+        for (const targetLink of node.links) {
+          const targetPath = this.graph.nodes.has('/' + targetLink + '.md') ? '/' + targetLink + '.md' :
+                             this.graph.nodes.has('/' + targetLink) ? '/' + targetLink : null;
+          
+          if (targetPath) {
+            edgesToReturn.push({ source: path, target: targetPath });
+            if (!visitedNodes.has(targetPath)) {
+              visitedNodes.add(targetPath);
+              queue.push({ path: targetPath, currentDepth: currentDepth + 1 });
+            }
+          }
+        }
+      }
+
+      // Incoming links (backlinks)
+      const baseName = path.replace(/^\//, '').replace(/\.md$/, '');
+      const incoming = this.graph.backlinks.get(baseName) || new Set();
+      for (const sourcePath of incoming) {
+        edgesToReturn.push({ source: sourcePath, target: path });
+        if (!visitedNodes.has(sourcePath)) {
+          visitedNodes.add(sourcePath);
+          queue.push({ path: sourcePath, currentDepth: currentDepth + 1 });
+        }
+      }
+    }
+
+    const nodes = Array.from(visitedNodes).map(path => ({
+      id: path,
+      label: path.split('/').pop() || path,
+      size: path === centerPath ? 15 : 5 + (this.graph.backlinks.get(path.replace(/^\//, '').replace(/\.md$/, ''))?.size || 0)
+    }));
+
+    // Deduplicate edges
+    const uniqueEdges = edgesToReturn.filter((v, i, a) => a.findIndex(t => (t.source === v.source && t.target === v.target)) === i);
+
+    return { nodes, edges: uniqueEdges };
+  }
 }
