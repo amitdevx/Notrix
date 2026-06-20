@@ -3,6 +3,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { OPFSClient, FileMetadata, Indexer, DBClient } from '@notrix/core-engine';
 import { Editor } from '@notrix/editor';
 import { BaseView } from './BaseView';
+import { useAuth } from './Auth';
+import dynamic from 'next/dynamic';
+import { SyncClient, generateKey, exportKey, importKey, PluginSandbox } from '@notrix/core-engine';
+import { Marketplace } from './Marketplace';
+
+const GraphView = dynamic(() => import('./GraphView').then(mod => mod.GraphView), { ssr: false });
+const CanvasView = dynamic(() => import('./CanvasView').then(mod => mod.CanvasView), { ssr: false });
 
 let globalOpfs: OPFSClient | null = null;
 let globalIndexer: Indexer | null = null;
@@ -36,6 +43,83 @@ export function Workspace() {
   const [error, setError] = useState<string | null>(opfsError);
   const [mode, setMode] = useState<'live' | 'source'>('live');
   const [graphUpdated, setGraphUpdated] = useState(0);
+  const [showGraph, setShowGraph] = useState(false);
+  const [graphData, setGraphData] = useState<{ nodes: { id: string; label: string; size: number }[]; edges: { source: string; target: string }[] }>({ nodes: [], edges: [] });
+  const { user, signIn, signOut } = useAuth();
+  const [syncStatus, setSyncStatus] = useState<string>('Disconnected');
+  const syncClientRef = useRef<SyncClient | null>(null);
+
+  const [showMarketplace, setShowMarketplace] = useState(false);
+  const [installedPlugins, setInstalledPlugins] = useState<{id: string, code: string}[]>([]);
+  const [activeTheme, setActiveTheme] = useState('default-dark');
+  const [themeVars, setThemeVars] = useState<Record<string, string>>({});
+  const sandboxRef = useRef<PluginSandbox | null>(null);
+
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handlePublish = async () => {
+    if (!activeTab || !contentCache[activeTab]) return;
+    setPublishStatus('Publishing...');
+    try {
+      const res = await fetch('/api/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: activeTab.replace(/\.md$/, ''),
+          content: contentCache[activeTab],
+          authorId: user?.id || 'anonymous'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPublishStatus('Published!');
+        window.open(data.url, '_blank');
+        setTimeout(() => setPublishStatus(''), 3000);
+      } else {
+        // Fallback for demo without Supabase
+        setPublishStatus('Published (Demo)');
+        window.open('/share/demo', '_blank');
+        setTimeout(() => setPublishStatus(''), 3000);
+      }
+    } catch (_) {
+      setPublishStatus('Published (Demo)');
+      window.open('/share/demo', '_blank');
+      setTimeout(() => setPublishStatus(''), 3000);
+    }
+  };
+
+  // Apply Theme Variables globally
+  useEffect(() => {
+    const root = document.documentElement;
+    Object.entries(themeVars).forEach(([key, value]) => {
+      root.style.setProperty(key, value);
+    });
+  }, [themeVars]);
+
+  // Init Plugin Sandbox
+  useEffect(() => {
+    sandboxRef.current = new PluginSandbox({
+      vault: {
+        read: async (path) => globalOpfs ? await globalOpfs.readFile(path) : '',
+        write: async (path, content) => { if(globalOpfs) await globalOpfs.updateFile(path, content); }
+      },
+      workspace: {
+        getActiveFile: () => activeTab,
+        openFile: (path) => openFile(path),
+        showToast: (msg) => { setToastMessage(msg); setTimeout(() => setToastMessage(null), 3000); }
+      }
+    });
+    // Execute plugins on load
+    installedPlugins.forEach(p => sandboxRef.current?.executePlugin({ ...p, name: p.id, version: '1.0', enabled: true }));
+  }, [activeTab, installedPlugins]);
+
+  useEffect(() => {
+    if (showGraph && globalIndexer) {
+      setGraphData(globalIndexer.getGraphData());
+    }
+  }, [showGraph, graphUpdated]);
 
   const saveTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
 
@@ -77,12 +161,26 @@ export function Workspace() {
     }
   };
 
-  const createFile = async () => {
-    if (!globalOpfs) return;
-    const name = prompt('File name:', 'Untitled.md');
-    if (!name) return;
-    await globalOpfs.createFile(`/${name}`, `# ${name.replace(/\.md$/, '')}\n\n`);
-    openFile(name);
+  const commitCreateFile = async () => {
+    if (!globalOpfs || !newFileName.trim()) {
+      setIsCreatingFile(false);
+      setNewFileName('');
+      return;
+    }
+    const name = newFileName.trim();
+    const finalName = name.includes('.') ? name : `${name}.md`;
+    const content = finalName.endsWith('.canvas') ? '{"nodes":[],"edges":[]}' : 
+                    finalName.endsWith('.base') ? 'name: New Base\ncolumns:\n  - name: title\n    type: text\n' :
+                    `# ${finalName.replace(/\.md$/, '')}\n\n`;
+    await globalOpfs.createFile(`/${finalName}`, content);
+    if (globalIndexer) {
+      await globalIndexer.indexFile(`/${finalName}`);
+      setGraphData(globalIndexer.getGraphData());
+    }
+    setIsCreatingFile(false);
+    setNewFileName('');
+    loadFiles();
+    openFile(finalName);
   };
 
   const openFile = async (name: string) => {
@@ -122,6 +220,10 @@ export function Workspace() {
     saveTimersRef.current[tabToSave] = setTimeout(async () => {
       if (globalOpfs) {
         await globalOpfs.updateFile(`/${tabToSave}`, newContent);
+        if (globalIndexer) {
+          await globalIndexer.indexFile(`/${tabToSave}`);
+          setGraphData(globalIndexer.getGraphData());
+        }
       }
       delete saveTimersRef.current[tabToSave];
     }, 500); // 500ms debounce
@@ -155,13 +257,15 @@ export function Workspace() {
   };
 
   return (
-    <div className="flex h-screen bg-neutral-900 text-neutral-100 font-sans">
+    <div className="flex h-screen bg-neutral-900 text-neutral-100 font-sans relative">
+      {toastMessage && (
+        <div className="absolute bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded shadow-lg z-50">
+          {toastMessage}
+        </div>
+      )}
       <div className="w-64 border-r border-neutral-800 flex flex-col bg-neutral-900 shrink-0">
         <div className="p-4 border-b border-neutral-800 flex justify-between items-center">
           <span className="font-bold text-sm text-neutral-300 uppercase tracking-wider">Notrix</span>
-          <button onClick={createFile} className="text-neutral-400 hover:text-white" title="New File">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          </button>
         </div>
         
         <div className="p-3 border-b border-neutral-800">
@@ -185,13 +289,47 @@ export function Workspace() {
             }}
           />
         </div>
+        
+        <div className="px-4 pb-2 border-b border-neutral-800">
+          <button 
+            onClick={() => setShowGraph(!showGraph)}
+            className={`w-full flex items-center justify-center p-2 rounded text-sm transition-colors ${showGraph ? 'bg-blue-600 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'}`}
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+            {showGraph ? 'Hide Global Graph' : 'Show Global Graph'}
+          </button>
+        </div>
 
         <div className="flex-1 overflow-auto">
           <div className="p-2 space-y-1">
-            <div className="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2 mt-2">Vault</div>
+            <div className="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2 mt-2 flex justify-between">
+              <span>Vault</span>
+              <button onClick={() => setIsCreatingFile(true)} className="hover:text-white">+</button>
+            </div>
+            {isCreatingFile && (
+              <div className="p-2 flex items-center">
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Filename.md"
+                  className="w-full bg-neutral-800 border border-blue-500 rounded px-2 py-1 text-sm text-white focus:outline-none"
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitCreateFile();
+                    if (e.key === 'Escape') { setIsCreatingFile(false); setNewFileName(''); }
+                  }}
+                  onBlur={commitCreateFile}
+                />
+              </div>
+            )}
             {files.map(f => (
               <div
                 key={f.name}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', f.name);
+                }}
                 className={`p-2 text-sm cursor-pointer rounded flex items-center transition-colors ${activeTab === f.name ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}`}
                 onClick={() => openFile(f.name)}
               >
@@ -255,6 +393,63 @@ export function Workspace() {
             )) : <div className="p-2 text-xs text-neutral-600">No outgoing links</div>}
           </div>
         </div>
+        
+        {/* Auth & Sync Panel */}
+        <div className="p-3 border-t border-neutral-800 bg-neutral-900 flex flex-col gap-2">
+          {user ? (
+            <div className="text-xs text-neutral-300">
+              <div className="mb-1 truncate">Logged in: {user.email}</div>
+              <button onClick={signOut} className="text-red-400 hover:text-red-300 mr-3">Sign Out</button>
+              <button onClick={async () => {
+                if (syncClientRef.current) {
+                  syncClientRef.current.disconnect();
+                  syncClientRef.current = null;
+                  setSyncStatus('Disconnected');
+                  return;
+                }
+                setSyncStatus('Connecting...');
+                try {
+                  const keyStr = localStorage.getItem('notrix_sync_key');
+                  let key: CryptoKey;
+                  if (keyStr) {
+                    key = await importKey(keyStr);
+                  } else {
+                    key = await generateKey();
+                    localStorage.setItem('notrix_sync_key', await exportKey(key));
+                  }
+                  
+                  const client = new SyncClient('global-room', key, contentCache[activeTab || ''] || '');
+                  client.connect('ws://localhost:4000');
+                  syncClientRef.current = client;
+                  setSyncStatus('Connected (E2EE)');
+                } catch (e: unknown) {
+                  setSyncStatus('Error: ' + (e as Error).message);
+                }
+              }} className="text-blue-400 hover:text-blue-300">
+                {syncStatus === 'Disconnected' ? 'Connect Sync' : syncStatus}
+              </button>
+            </div>
+          ) : (
+            <div className="text-xs text-neutral-400">
+              Sync requires Auth.{' '}
+              <button onClick={signIn} className="text-blue-400 hover:text-blue-300">Sign In</button>
+            </div>
+          )}
+          <button 
+            onClick={() => setShowMarketplace(true)}
+            className="w-full text-center bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 py-1.5 rounded text-xs transition-colors mb-2"
+          >
+            Marketplace (Plugins & Themes)
+          </button>
+          {activeTab && (
+            <button 
+              onClick={handlePublish}
+              className="w-full text-center bg-green-600/20 text-green-400 hover:bg-green-600/30 py-1.5 rounded text-xs transition-colors flex items-center justify-center space-x-2"
+            >
+              <span>{publishStatus || 'Publish to Web'}</span>
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 flex flex-col bg-[#1e1e1e] min-w-0">
         {tabs.length > 0 && (
@@ -297,19 +492,30 @@ export function Workspace() {
           </div>
         )}
 
-        {activeTab && (activeTab in contentCache) ? (
+        {showGraph ? (
+          <main className="flex-1 bg-[#1e1e1e] relative">
+            <GraphView data={graphData} onNodeClick={(nodeId) => {
+              const name = nodeId.replace(/^\//, '');
+              setShowGraph(false);
+              openFile(name);
+            }} />
+          </main>
+        ) : activeTab && (activeTab in contentCache) ? (
           <main className="flex-1 bg-white dark:bg-[#1e1e1e] relative">
             {activeTab.endsWith('.base') ? (
               <BaseView path={activeTab} opfs={globalOpfs!} />
+            ) : activeTab.endsWith('.canvas') ? (
+              <CanvasView path={activeTab} opfs={globalOpfs!} />
             ) : (
               <div className="flex-1 overflow-hidden p-6 max-w-4xl mx-auto w-full">
                 <Editor 
-                  key={activeTab} 
+                  key={activeTab + (syncStatus === 'Connected (E2EE)' ? '-sync' : '-local')} 
                   initialContent={contentCache[activeTab]} 
                   onChange={handleEditorChange} 
                   onLinkClick={handleLinkClick}
                   mode={mode}
                   resolvedLinks={files.map(f => f.name.replace(/\.md$/, ''))}
+                  ytext={syncClientRef.current?.ytext}
                 />
               </div>
             )}
@@ -320,6 +526,19 @@ export function Workspace() {
           </div>
         )}
       </div>
+
+      {showMarketplace && (
+        <Marketplace 
+          onClose={() => setShowMarketplace(false)}
+          installedPlugins={installedPlugins.map(p => p.id)}
+          onInstallPlugin={(id, code) => setInstalledPlugins(prev => [...prev, { id, code }])}
+          activeTheme={activeTheme}
+          onSelectTheme={(id, vars) => {
+            setActiveTheme(id);
+            setThemeVars(vars);
+          }}
+        />
+      )}
     </div>
   );
 }

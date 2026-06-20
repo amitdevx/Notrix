@@ -12,7 +12,9 @@
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language": "^6.12.3",
     "@codemirror/state": "^6.4.1",
-    "@codemirror/view": "^6.27.0"
+    "@codemirror/view": "^6.27.0",
+    "y-codemirror.next": "^0.3.5",
+    "yjs": "^13.6.31"
   },
   "devDependencies": {
     "@notrix/typescript-config": "workspace:*",

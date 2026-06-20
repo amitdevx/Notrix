@@ -6,6 +6,8 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { keymap } from '@codemirror/view';
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import { wikiLinks } from '../extensions/wikilink';
+import { yCollab } from 'y-codemirror.next';
+import * as Y from 'yjs';
 
 export interface EditorProps {
   initialContent?: string;
@@ -13,6 +15,7 @@ export interface EditorProps {
   onLinkClick?: (target: string) => void;
   mode?: 'source' | 'live';
   resolvedLinks?: string[];
+  ytext?: Y.Text;
 }
 
 export const Editor: React.FC<EditorProps> = ({ 
@@ -20,7 +23,8 @@ export const Editor: React.FC<EditorProps> = ({
   onChange,
   onLinkClick,
   mode = 'live',
-  resolvedLinks = []
+  resolvedLinks = [],
+  ytext
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -80,7 +84,8 @@ export const Editor: React.FC<EditorProps> = ({
         clickHandler,
         modeCompartment.of(getModeExtensions(mode)),
         wikilinkCompartment.of(wikiLinks(resolvedLinks)),
-        updateListener
+        updateListener,
+        ...(ytext ? [yCollab(ytext, null)] : [])
       ]
     });
 

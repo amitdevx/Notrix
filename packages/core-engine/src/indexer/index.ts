@@ -124,4 +124,27 @@ export class Indexer {
   getOutgoingLinks(path: string): string[] {
     return this.graph.nodes.get(path)?.links || [];
   }
+
+  getGraphData(): { nodes: { id: string; label: string; size: number }[]; edges: { source: string; target: string }[] } {
+    const nodes = Array.from(this.graph.nodes.keys()).map(path => ({
+      id: path,
+      label: path.split('/').pop() || path,
+      size: 5 + (this.graph.backlinks.get(path.replace(/^\//, '').replace(/\.md$/, ''))?.size || 0)
+    }));
+
+    const edges: { source: string; target: string }[] = [];
+    for (const [sourcePath, node] of this.graph.nodes.entries()) {
+      for (const targetLink of node.links) {
+        const potentialTarget = '/' + targetLink + '.md';
+        if (this.graph.nodes.has(potentialTarget)) {
+          edges.push({ source: sourcePath, target: potentialTarget });
+        } else if (this.graph.nodes.has('/' + targetLink)) {
+          edges.push({ source: sourcePath, target: '/' + targetLink });
+        } else {
+          // Unresolved links can still be added as nodes if desired, but we'll skip for now to keep graph clean
+        }
+      }
+    }
+    return { nodes, edges };
+  }
 }

@@ -7,6 +7,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
     "flexsearch": "^0.8.212",
     "js-yaml": "^4.2.0",
     "rehype-katex": "^7.0.1",
@@ -21,7 +22,9 @@
     "remark-wiki-link": "^2.0.1",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.1.0",
-    "wa-sqlite": "^1.0.0"
+    "wa-sqlite": "^1.0.0",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.31"
   },
   "devDependencies": {
     "@notrix/typescript-config": "workspace:*",
