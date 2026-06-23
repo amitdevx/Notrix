@@ -2,6 +2,8 @@
 
 🚧 **Under Construction** 🚧
 
+(user phase-10: polishing)
+
 Notrix is currently in active development and is not ready for production use.
 
 We're building a modern knowledge management platform focused on speed, simplicity, privacy, and connected thinking.
